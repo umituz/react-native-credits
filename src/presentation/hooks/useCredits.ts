@@ -3,9 +3,14 @@
  * Business logic for credits management
  * Single Responsibility: Handle credits balance and checks
  * Uses centralized Zustand store for state management
+ *
+ * CRITICAL: This hook reads from global store, NOT from Firestore
+ * Credits are fetched once when app opens (in App.tsx)
+ * Updates modify store state directly (no refetch)
+ * Real-time listener updates store automatically
  */
 
-import { useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { useCreditsStore } from "../../infrastructure/storage/CreditsStore";
 import type { ICreditsRepository } from "../../domain/repositories/ICreditsRepository";
 
@@ -25,9 +30,9 @@ export interface UseCreditsReturn {
   loading: boolean;
 
   /** Error state */
-  error: Error | null;
+  error: string | null;
 
-  /** Load credits from repository */
+  /** Load credits from repository (force reload, no cache) */
   loadCredits: () => Promise<void>;
 
   /** Check if user has enough credits */
@@ -37,6 +42,7 @@ export interface UseCreditsReturn {
 /**
  * Hook for credits management
  * Uses centralized store - all components share the same credit state
+ * CRITICAL: Does NOT fetch on mount - store is initialized in App.tsx
  */
 export function useCredits(params: UseCreditsParams): UseCreditsReturn {
   const { userId, repository } = params;
@@ -49,12 +55,13 @@ export function useCredits(params: UseCreditsParams): UseCreditsReturn {
   /**
    * Load credits balance from repository
    * Uses centralized store
+   * CRITICAL: Force reload from Firestore (no cache)
    */
   const loadCredits = useCallback(async () => {
     if (!userId) {
       return;
     }
-    await loadCreditsFromStore(userId, repository);
+    await loadCreditsFromStore(userId, repository, false); // Force reload
   }, [userId, repository, loadCreditsFromStore]);
 
   /**
@@ -67,15 +74,9 @@ export function useCredits(params: UseCreditsParams): UseCreditsReturn {
     [credits],
   );
 
-  // Load credits on mount and when userId changes
-  useEffect(() => {
-    if (userId) {
-      loadCredits();
-    } else {
-      // Reset store when user logs out
-      useCreditsStore.getState().reset();
-    }
-  }, [userId, loadCredits]);
+  // CRITICAL: Do NOT load credits on mount
+  // Store is initialized in App.tsx when user logs in
+  // This prevents every component from triggering a Firestore read
 
   return {
     credits,
@@ -85,4 +86,3 @@ export function useCredits(params: UseCreditsParams): UseCreditsReturn {
     checkCredits,
   };
 }
-
